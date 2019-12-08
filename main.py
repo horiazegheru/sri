@@ -9,11 +9,11 @@ import re, email, json
 import requests
 import dateparser
 
-populate_elastic = False
+populate_elastic = True
 es = Elasticsearch()
 app = Flask(__name__)
 
-fields = ['Message_ID', 'Date', 'From', 'To', 'Subject', 'Mime_Version', 'Content_Type',
+fields = ['Message_ID', 'From', 'To', 'Subject', 'Mime_Version', 'Content_Type',
         'Content_Transfer_Encoding', 'X_From', 'X_To', 'X_Cc', 'X_Bcc', 'X_Folder',
         'X_Origin', 'X_FileName', 'content', 'user', 'insert_time']
 
@@ -35,22 +35,11 @@ def split_email_addresses(line):
         addrs = None
     return addrs
 
-@app.route('/', methods=['GET'])
-def index():
-    global fields
-    return render_template('home.html',thing_to_say='hello', fields=fields)
-
-@app.route('/delete', methods=['GET'])
-def delete():
-    results = es.indices.delete(index='emails', ignore=[400, 404])
-    return jsonify(results)
-
 def parseDate(date) :
 	date = date.split(',')[1]
 	date = date.split('(')[0]
 	parsedDate = dateparser.parse(date)
-	return parsedDate;
-
+	return parsedDate
 
 def build_body(data):
     global populate_elastic
@@ -100,6 +89,16 @@ def build_body(data):
 
     return body
 
+@app.route('/', methods=['GET'])
+def index():
+    global fields
+    return render_template('home.html',thing_to_say='hello', fields=fields)
+
+@app.route('/delete', methods=['GET'])
+def delete():
+    results = es.indices.delete(index='emails', ignore=[400, 404])
+    return jsonify(results)
+
 @app.route('/insert_data', methods=['POST'])
 def insert_data():
     data = request.json
@@ -107,35 +106,6 @@ def insert_data():
     result = es.index(index='emails', doc_type='email', id=body['Message_ID'], body=body)
 
     return jsonify(result)
-
-# query by fromUser, toUser, startDate, endDate 
-@app.route('/byDate', methods = ['GET'])
-def searchByDate() : 
-	startDate = request.args.get('startDate')
-	endDate = request.args.get('endDate')
-	if endDate is None: 
-		endDate = datetime.now()
-		endDate = endDate.strftime('%Y-%m-%dT%H:%M:%S')
-
-
-	print (startDate)
-	print (endDate)
-	body = {
-		"query" : {
-			"range" : {
-				"ParsedDate": {
-					"gte" : startDate,
-					"lt" : endDate,
-					"format" : "yyyy-MM-dd'T'HH:mm:ss"
-					
-				}
-			}
-		} 
-
-	}
-	res = es.search(index="emails", doc_type="email", body = body)
-	return jsonify(res['hits']['hits'])
-
 
 @app.route('/search', methods=['POST'])
 def search():
@@ -159,10 +129,21 @@ def search_fields():
     keyword = request.form['searchbar']
     print(keyword)
 
-    local_fields = [key for key in request.form.keys() if request.form[key] == 'on']
-    print(local_fields)
+    local_fields = [key for key in fields if key in request.form.keys() and request.form[key] == 'on']
+    local_dates = [request.form[key+'Text'] if key in request.form.keys() and request.form[key] == 'on' else None for key in ['startDate', 'endDate']]
+    
+    start_date = local_dates[0]
+    end_date = local_dates[1]
 
-    if fields == []:
+    if start_date is None:
+        start_date = datetime.utcfromtimestamp(0)
+        start_date = start_date.strftime('%Y-%m-%dT%H:%M:%S')
+
+    if end_date is None: 
+        end_date = datetime.now()
+        end_date = end_date.strftime('%Y-%m-%dT%H:%M:%S')
+
+    if local_fields == []:
         body = {
             "query": {
                 "match_all" : {}
@@ -171,12 +152,28 @@ def search_fields():
     else:
         body = {
             "query": {
-                "multi_match": {
-                    "query": keyword,
-                    "fields": local_fields
+                "bool": {
+                    "filter": [{
+                        "multi_match": {
+                            "query": keyword,
+                            "fields": local_fields
+                        }
+                    },
+                    {
+                        "range": {
+                            "ParsedDate": {
+                                "gte": start_date,
+                                "lte": end_date,
+                                "format": 'yyyy-MM-dd\'T\'HH:mm:ss'
+                            }
+                        }
+                    }]
                 }
             }
         }
+
+    print(body)
+        
 
     res = es.search(index="emails", doc_type="email", body=body)
 
