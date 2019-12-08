@@ -7,6 +7,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import re, email, json
 import requests
+import dateparser
 
 populate_elastic = False
 es = Elasticsearch()
@@ -44,6 +45,13 @@ def delete():
     results = es.indices.delete(index='emails', ignore=[400, 404])
     return jsonify(results)
 
+def parseDate(date) :
+	date = date.split(',')[1]
+	date = date.split('(')[0]
+	parsedDate = dateparser.parse(date)
+	return parsedDate;
+
+
 def build_body(data):
     global populate_elastic
 
@@ -71,6 +79,7 @@ def build_body(data):
     body = {
         'Message_ID': mid,
         'Date': mdate,
+        'ParsedDate' : parseDate(mdate),
         'From': mfrom,
         'To': mto,
         'Subject': msubject,
@@ -98,6 +107,35 @@ def insert_data():
     result = es.index(index='emails', doc_type='email', id=body['Message_ID'], body=body)
 
     return jsonify(result)
+
+# query by fromUser, toUser, startDate, endDate 
+@app.route('/byDate', methods = ['GET'])
+def searchByDate() : 
+	startDate = request.args.get('startDate')
+	endDate = request.args.get('endDate')
+	if endDate is None: 
+		endDate = datetime.now()
+		endDate = endDate.strftime('%Y-%m-%dT%H:%M:%S')
+
+
+	print (startDate)
+	print (endDate)
+	body = {
+		"query" : {
+			"range" : {
+				"ParsedDate": {
+					"gte" : startDate,
+					"lt" : endDate,
+					"format" : "yyyy-MM-dd'T'HH:mm:ss"
+					
+				}
+			}
+		} 
+
+	}
+	res = es.search(index="emails", doc_type="email", body = body)
+	return jsonify(res['hits']['hits'])
+
 
 @app.route('/search', methods=['POST'])
 def search():
