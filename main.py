@@ -1,5 +1,5 @@
 from datetime import datetime
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from elasticsearch import Elasticsearch
 import numpy as np # linear algebra
 import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
@@ -8,9 +8,13 @@ import matplotlib.pyplot as plt
 import re, email, json
 import requests
 
-populate_elastic = True
+populate_elastic = False
 es = Elasticsearch()
 app = Flask(__name__)
+
+fields = ['Message_ID', 'Date', 'From', 'To', 'Subject', 'Mime_Version', 'Content_Type',
+        'Content_Transfer_Encoding', 'X_From', 'X_To', 'X_Cc', 'X_Bcc', 'X_Folder',
+        'X_Origin', 'X_FileName', 'content', 'user', 'insert_time']
 
 ## Helper functions
 def get_text_from_email(msg):
@@ -32,7 +36,8 @@ def split_email_addresses(line):
 
 @app.route('/', methods=['GET'])
 def index():
-    return ready_to_insert()
+    global fields
+    return render_template('home.html',thing_to_say='hello', fields=fields)
 
 @app.route('/delete', methods=['GET'])
 def delete():
@@ -106,6 +111,34 @@ def search():
             }
         }
     }
+
+    res = es.search(index="emails", doc_type="email", body=body)
+
+    return jsonify(res['hits']['hits'])
+
+@app.route('/search_fields', methods=['POST'])
+def search_fields():
+    keyword = request.form['searchbar']
+    print(keyword)
+
+    local_fields = [key for key in request.form.keys() if request.form[key] == 'on']
+    print(local_fields)
+
+    if fields == []:
+        body = {
+            "query": {
+                "match_all" : {}
+            }
+        }
+    else:
+        body = {
+            "query": {
+                "multi_match": {
+                    "query": keyword,
+                    "fields": local_fields
+                }
+            }
+        }
 
     res = es.search(index="emails", doc_type="email", body=body)
 

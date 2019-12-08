@@ -1,0 +1,18 @@
+<html>
+    <body>
+    <h1>
+     Email Search:   
+     </h1>
+     <form action="{{ url_for('search_fields') }}" method="post">
+        <input type="text" id="searchbar" size="40" placeholder="Enter keyword" name="searchbar">
+        <br/>
+        <br/>
+        {% for field in fields %}
+            {{ field }}: <b><input type="checkbox" name="{{field}}"/></b><br/>
+        {% endfor %}
+        <br/>
+        <br/>
+        <input type="submit" value="Submit"/>
+        </body>
+    </form>
+</html>
