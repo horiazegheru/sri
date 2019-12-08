@@ -143,10 +143,12 @@ def search_fields():
         end_date = datetime.now()
         end_date = end_date.strftime('%Y-%m-%dT%H:%M:%S')
 
-    if local_fields == []:
+    if local_fields == [] and start_date is None and end_date is None:
         body = {
             "query": {
-                "match_all" : {}
+                "multi_match" : {
+                    "query": keyword,
+                    "fields": fields,                }
             }
         }
     else:
