@@ -112,46 +112,6 @@ def insert_data():
 
     return jsonify(result)
 
-"""
-@app.route('/search', methods=['POST'])
-def search():
-    keyword = request.json['keyword']
-
-    body = {
-        "query": {
-            "multi_match": {
-                "query": keyword,
-                "fields": ["content", "user", "Subject", "From", "To"]
-            }
-        }
-    }
-
-    res = es.search(index="emails", doc_type="email", body=body)
-
-    return jsonify(res['hits']['hits'])
-"""
-
-# https://discuss.elastic.co/t/wildcard-query-not-working-as-expected/84447
-# https://www.timroes.de/elasticsearch-kibana-queries-in-depth-tutorial
-# multiterm https://www.elastic.co/guide/en/elasticsearch/reference/5.6/query-dsl-wildcard-query.html
-@app.route('/search_wildcards', methods=['POST'])
-def search_with_wildcards():
-    keyword = request.json['keyword']
-
-    body = {
-	    "query": {
-            "query_string" : {
-                "query": keyword,
-                "fields": ["content", "user", "Subject", "From", "To"]
-            }
-        }
-    }
-
-    res = es.search(index="emails", doc_type="email", body=body)
-
-    return jsonify(res['hits']['hits'])
-
-
 @app.route('/search_fields', methods=['POST'])
 def search_fields():
     keyword = request.form['searchbar']
@@ -173,10 +133,11 @@ def search_fields():
 
     if local_fields == [] and start_date is None and end_date is None:
         body = {
-            "query": {
-                "multi_match" : {
+	        "query": {
+                "query_string" : {
                     "query": keyword,
-                    "fields": fields,                }
+                    "fields": fields
+                }
             }
         }
     else:
@@ -184,7 +145,7 @@ def search_fields():
             "query": {
                 "bool": {
                     "filter": [{
-                        "multi_match": {
+                        "query_string": {
                             "query": keyword,
                             "fields": local_fields
                         }
