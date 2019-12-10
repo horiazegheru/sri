@@ -116,14 +116,15 @@ def search():
 # https://discuss.elastic.co/t/wildcard-query-not-working-as-expected/84447
 # https://www.timroes.de/elasticsearch-kibana-queries-in-depth-tutorial
 # multiterm https://www.elastic.co/guide/en/elasticsearch/reference/5.6/query-dsl-wildcard-query.html
-@app.route('/search', methods=['POST'])
+@app.route('/search_wildcards', methods=['POST'])
 def search_with_wildcards():
     keyword = request.json['keyword']
 
     body = {
-        "query": {
-            "wildcard": {
-                "content": "wha*"
+	    "query": {
+            "query_string" : {
+                "query": keyword,
+                "fields": ["content", "user", "Subject", "From", "To"]
             }
         }
     }
