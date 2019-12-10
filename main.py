@@ -89,6 +89,11 @@ def build_body(data):
 
     return body
 
+
+@app.route('/ready_to_insert', methods=['GET'])
+def index_ready_to_insert():
+    return ready_to_insert()
+
 @app.route('/', methods=['GET'])
 def index():
     global fields
