@@ -7,9 +7,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import re, email, json
 import requests
-import dateparser
+import dateutil.parser
 
-populate_elastic = True
+populate_elastic = False
 es = Elasticsearch()
 app = Flask(__name__)
 
@@ -34,12 +34,6 @@ def split_email_addresses(line):
     else:
         addrs = None
     return addrs
-
-def parseDate(date) :
-	date = date.split(',')[1]
-	date = date.split('(')[0]
-	parsedDate = dateparser.parse(date)
-	return parsedDate
 
 def build_body(data):
     global populate_elastic
@@ -68,7 +62,6 @@ def build_body(data):
     body = {
         'Message_ID': mid,
         'Date': mdate,
-        'ParsedDate' : parseDate(mdate),
         'From': mfrom,
         'To': mto,
         'Subject': msubject,
@@ -109,77 +102,89 @@ def insert_data():
 
 @app.route('/search', methods=['POST'])
 def search():
-    keyword = request.json['keyword']
-
-    body = {
-        "query": {
-            "multi_match": {
-                "query": keyword,
-                "fields": ["content", "user", "Subject", "From", "To"]
-            }
-        }
-    }
-
-    res = es.search(index="emails", doc_type="email", body=body)
-
-    return jsonify(res['hits']['hits'])
-
-@app.route('/search_fields', methods=['POST'])
-def search_fields():
     keyword = request.form['searchbar']
-    print(keyword)
 
-    local_fields = [key for key in fields if key in request.form.keys() and request.form[key] == 'on']
-    local_dates = [request.form[key+'Text'] if key in request.form.keys() and request.form[key] == 'on' else None for key in ['startDate', 'endDate']]
-    
-    start_date = local_dates[0]
-    end_date = local_dates[1]
+    line = re.findall(r"Date:\[.*\]", keyword)
+    if line != []:
+        line = line[0][6:-1].split(' TO ')
+        if line[0] == '*':
+            start_date = unix_time_millis(datetime.utcfromtimestamp(0))
+        else:
+            start_date = unix_time_millis(dateutil.parser.parse(line[0]))
 
-    if start_date is None:
-        start_date = datetime.utcfromtimestamp(0)
-        start_date = start_date.strftime('%Y-%m-%dT%H:%M:%S')
 
-    if end_date is None: 
-        end_date = datetime.now()
-        end_date = end_date.strftime('%Y-%m-%dT%H:%M:%S')
+        if line[1] == '*': 
+            end_date = unix_time_millis(datetime.now())
+        else:
+            end_date = unix_time_millis(dateutil.parser.parse(line[1]))
 
-    if local_fields == [] and start_date is None and end_date is None:
-        body = {
-            "query": {
-                "multi_match" : {
-                    "query": keyword,
-                    "fields": fields,                }
-            }
-        }
-    else:
-        body = {
-            "query": {
-                "bool": {
-                    "filter": [{
-                        "multi_match": {
-                            "query": keyword,
-                            "fields": local_fields
-                        }
-                    },
-                    {
-                        "range": {
-                            "ParsedDate": {
-                                "gte": start_date,
-                                "lte": end_date,
-                                "format": 'yyyy-MM-dd\'T\'HH:mm:ss'
-                            }
-                        }
-                    }]
-                }
-            }
-        }
+        keyword = keyword.replace('Date:[' + line[0] + ' TO ' + line[1] + ']', 
+            'Date:[' + str(int(start_date)) + ' TO ' + str(int(end_date)) + ']')
 
-    print(body)
-        
-
-    res = es.search(index="emails", doc_type="email", body=body)
+    print('query is', keyword)
+    res = es.search(index="emails", doc_type="email", q=keyword)
 
     return jsonify(res['hits']['hits'])
+
+def unix_time_millis(dt):
+    epoch = datetime.utcfromtimestamp(0)
+    return (dt - epoch).total_seconds() * 1000
+
+# @app.route('/search_fields', methods=['POST'])
+# def search_fields():
+#     keyword = request.form['searchbar']
+
+#     local_fields = [key for key in fields if key in request.form.keys() and request.form[key] == 'on']
+#     local_dates = [request.form[key+'Text'] if key in request.form.keys() and request.form[key] == 'on' else None for key in ['startDate', 'endDate']]
+    
+#     start_date = local_dates[0]
+#     end_date = local_dates[1]
+
+#     if start_date is None:
+#         start_date = unix_time_millis(datetime.utcfromtimestamp(0))
+#     else:
+#         start_date = unix_time_millis(dateutil.parser.parse(start_date))
+
+
+#     if end_date is None: 
+#         end_date = unix_time_millis(datetime.now())
+#     else:
+#         end_date = unix_time_millis(dateutil.parser.parse(end_date))
+
+#     if local_fields == [] and start_date is None and end_date is None:
+#         body = {
+#             "query": {
+#                 "multi_match" : {
+#                     "query": keyword,
+#                     "fields": fields,                }
+#             }
+#         }
+#     else:
+#         body = {
+#             "query": {
+#                 "bool": {
+#                     "filter": [{
+#                         "multi_match": {
+#                             "query": keyword,
+#                             "fields": local_fields
+#                         }
+#                     },
+#                     {
+#                         "range": {
+#                             "Date": {
+#                                 "gte": start_date,
+#                                 "lte": end_date,
+#                                 "format": 'epoch_millis'
+#                             }
+#                         }
+#                     }]
+#                 }
+#             }
+#         }
+
+#     res = es.search(index="emails", doc_type="email", body=body)
+
+#     return jsonify(res['hits']['hits'])
 
 def ready_to_insert():
     global populate_elastic
@@ -200,6 +205,7 @@ def ready_to_insert():
         # Split multiple email addresses
         emails_df['From'] = emails_df['From'].map(split_email_addresses)
         emails_df['To'] = emails_df['To'].map(split_email_addresses)
+        emails_df['Date'] = emails_df['Date'].apply(lambda t: pd.Timestamp(t[:-12], unit='ms')).values
 
         # Extract the root of 'file' as 'user'
         emails_df['user'] = emails_df['file'].map(lambda x:x.split('/')[0])
@@ -210,9 +216,6 @@ def ready_to_insert():
             body = build_body(mydata)
             result = es.index(index='emails', doc_type='email', id=body['Message_ID'], body=build_body(mydata))
 
-        return jsonify("Populated successfully")
-
-    return jsonify("Hello World. Make populate_elastic True in order to populate elastic, then restart app, then hit localhost:5000/ again")
-
 if __name__ == "__main__":
+    ready_to_insert()
     app.run(port=5000, debug=True)
