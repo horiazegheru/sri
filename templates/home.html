@@ -1,23 +1,24 @@
 <html>
     <body>
-    <h1>
-     Email Search:   
-     </h1>
-     <form action="{{ url_for('search_fields') }}" method="post">
-        <input type="text" id="searchbar" size="40" placeholder="Enter keyword" name="searchbar">
-        <br/>
-        <br/>
-        {% for field in fields %}
-            {{ field }}: <b><input type="checkbox" name="{{field}}"/></b><br/>
-        {% endfor %}
-        start date: <b><input type="checkbox" name="startDate"/></b>
-        <input type="text" id="startDateText" size="40" placeholder="start date(yyyy-MM-dd'T'HH:mm:ss)" name="startDateText">
-        <br/>
-        end date: <b><input type="checkbox" name="endDate"/></b>
-        <input type="text" id="endDateText" size="40" placeholder="end date(yyyy-MM-dd'T'HH:mm:ss)" name="endDateText">
-        <br/>
-        <br/>
-        <input type="submit" value="Submit"/>
-        </body>
-    </form>
+        <h1>
+         Email Search:   
+         </h1>
+         <form action="{{ url_for('search') }}" method="post">
+            <input type="text" id="searchbar" size="120" placeholder="Enter keyword" name="searchbar">
+            <br/>
+            <br/>
+            <input type="submit" value="Submit"/>
+            <br/>
+            Field names:
+            <br/>
+            {% for field in fields %}
+                {{ field }}
+                <br/>
+            {% endfor %}
+            <br/>    
+            date format: yyyy-MM-ddTHH:mm:ss (ISO)
+            <br/>    
+            Use Lucene query format!
+        </form>
+    </body>
 </html>
