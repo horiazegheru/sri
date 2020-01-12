@@ -118,6 +118,7 @@ def search():
         else:
             end_date = unix_time_millis(dateutil.parser.parse(line[1]))
 
+        print('Date:[' + line[0] + ' TO ' + line[1] + ']')
         keyword = keyword.replace('Date:[' + line[0] + ' TO ' + line[1] + ']', 
             'Date:[' + str(int(start_date)) + ' TO ' + str(int(end_date)) + ']')
 
@@ -205,7 +206,7 @@ def ready_to_insert():
         # Split multiple email addresses
         emails_df['From'] = emails_df['From'].map(split_email_addresses)
         emails_df['To'] = emails_df['To'].map(split_email_addresses)
-        emails_df['Date'] = emails_df['Date'].apply(lambda t: pd.Timestamp(t[:-12], unit='ms')).values
+        emails_df['Date'] = emails_df['Date'].apply(lambda t: pd.Timestamp(t[:-12]), unit='ms').values
 
         # Extract the root of 'file' as 'user'
         emails_df['user'] = emails_df['file'].map(lambda x:x.split('/')[0])
