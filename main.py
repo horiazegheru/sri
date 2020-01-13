@@ -13,9 +13,8 @@ populate_elastic = False
 es = Elasticsearch()
 app = Flask(__name__)
 
-fields = ['Message_ID', 'From', 'To', 'Subject', 'Mime_Version', 'Content_Type',
-        'Content_Transfer_Encoding', 'X_From', 'X_To', 'X_Cc', 'X_Bcc', 'X_Folder',
-        'X_Origin', 'X_FileName', 'content', 'user', 'insert_time']
+fields = ['Message_ID', 'From', 'To', 'Subject', 'Content_Type', 'content', 'user', 'insert_time']
+        # 'X_From', 'X_To', 'X_Cc', 'X_Bcc', 'X_Folder', 'X_Origin', 'X_FileName', 'Mime_Version', 'Content_Transfer_Encoding']
 
 ## Helper functions
 def get_text_from_email(msg):
@@ -65,19 +64,20 @@ def build_body(data):
         'From': mfrom,
         'To': mto,
         'Subject': msubject,
-        'Mime_Version': mmime,
+        # 'Mime_Version': mmime,
         'Content_Type': mctype,
-        'Content_Transfer_Encoding': mcte,
-        'X_From': mxfrom,
-        'X_To': mxto,
-        'X_Cc': mxcc,
-        'X_Bcc': mxbcc,
-        'X_Folder': mxfolder,
-        'X_Origin': mxorigin,
-        'X_FileName': mxfilename,
+        # 'Content_Transfer_Encoding': mcte,
+        # 'X_From': mxfrom,
+        # 'X_To': mxto,
+        # 'X_Cc': mxcc,
+        # 'X_Bcc': mxbcc,
+        # 'X_Folder': mxfolder,
+        # 'X_Origin': mxorigin,
+        # 'X_FileName': mxfilename,
         'content': mcontent,
         'user': muser,
-        'insert_time': datetime.now()
+        'insert_time': datetime.now(),
+        'spam': data['spam']
     }
 
     return body
@@ -122,7 +122,7 @@ def search():
         keyword = keyword.replace('Date:[' + line[0] + ' TO ' + line[1] + ']', 
             'Date:[' + str(int(start_date)) + ' TO ' + str(int(end_date)) + ']')
 
-    print('query is', keyword)
+    print('query is:', keyword)
     res = es.search(index="emails", doc_type="email", q=keyword)
 
     return jsonify(res['hits']['hits'])
@@ -187,36 +187,51 @@ def unix_time_millis(dt):
 
 #     return jsonify(res['hits']['hits'])
 
-def ready_to_insert():
+def ready_to_insert(nr_emails=500):
     global populate_elastic
     if populate_elastic:
-        pd.options.mode.chained_assignment = None
+        
+        bodies = []
         chunk = pd.read_csv('emails.csv', chunksize=500)
-        emails_df = next(chunk)
+        for i in range(int(nr_emails / 500)):
+            print('chunk', i)
+            hamspam = joblib.load('first100k')
+            
+            pd.options.mode.chained_assignment = None
+            emails_df = next(chunk)
 
-        # Parse the emails into a list email objects
-        messages = list(map(email.message_from_string, emails_df['message']))
-        emails_df.drop('message', axis=1, inplace=True)
-        # Get fields from parsed email objects
-        keys = messages[0].keys()
-        for key in keys:
-            emails_df[key] = [doc[key] for doc in messages]
-        # Parse content from emails
-        emails_df['content'] = list(map(get_text_from_email, messages))
-        # Split multiple email addresses
-        emails_df['From'] = emails_df['From'].map(split_email_addresses)
-        emails_df['To'] = emails_df['To'].map(split_email_addresses)
-        emails_df['Date'] = emails_df['Date'].apply(lambda t: pd.Timestamp(t[:-12]), unit='ms').values
+            # Parse the emails into a list email objects
+            messages = list(map(email.message_from_string, emails_df['message']))
+            emails_df.drop('message', axis=1, inplace=True)
+            # Get fields from parsed email objects
+            keys = messages[0].keys()
+            for key in keys:
+                emails_df[key] = [doc[key] for doc in messages]
+            # Parse content from emails
+            emails_df['content'] = list(map(get_text_from_email, messages))
+            # Split multiple email addresses
+            emails_df['From'] = emails_df['From'].map(split_email_addresses)
+            emails_df['To'] = emails_df['To'].map(split_email_addresses)
+            emails_df['Date'] = emails_df['Date'].apply(lambda t: pd.Timestamp(t[:-12])).values
 
-        # Extract the root of 'file' as 'user'
-        emails_df['user'] = emails_df['file'].map(lambda x:x.split('/')[0])
-        del messages
+            # Extract the root of 'file' as 'user'
+            emails_df['user'] = emails_df['file'].map(lambda x:x.split('/')[0])
+            emails_df['spam'] = hamspam[i * 500: (i + 1) * 500]
 
-        for i in range(0, len(emails_df)):
-            mydata = emails_df.loc[i].to_json()
-            body = build_body(mydata)
-            result = es.index(index='emails', doc_type='email', id=body['Message_ID'], body=build_body(mydata))
+            del messages
 
+            for j in range(i * 500, (i + 1) * 500):
+                mydata = emails_df.loc[j].to_json()
+                bodies.append(build_body(mydata))
+
+        for body in bodies:
+            if body['spam']:
+                print('spam')
+            result = es.index(index='emails', doc_type='email', id=body['Message_ID'], body=body)
+
+
+import glob
+import joblib
 if __name__ == "__main__":
-    ready_to_insert()
+    ready_to_insert(nr_emails=10000)
     app.run(port=5000, debug=True)
