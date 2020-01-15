@@ -9,7 +9,7 @@ import re, email, json
 import requests
 import dateutil.parser
 
-populate_elastic = False
+populate_elastic = True
 es = Elasticsearch()
 app = Flask(__name__)
 
@@ -162,67 +162,72 @@ def ready_to_insert(nr_emails=500):
 				bodies.append(build_body(mydata))
 
 		for body in bodies:
-			if body['spam']:
-				print('spam')
+			# if body['spam']:
+			# 	print('spam')
 			result = es.index(index='emails', doc_type='email', id=body['Message_ID'], body=body)
-	return "ok"
+		print("i am doneee ")
+	# return "ok"
 
 
 def create_conversaiton_index(nr_emails=500):
+	global populate_elastic
+	if populate_elastic:
+		original_messages = []
+		messages_list = []
+		bodies = []
+		chunk = pd.read_csv('emails.csv', chunksize=nr_emails)
+		emails_df = next(chunk)
 
-	original_messages = []
-	messages_list = []
-	bodies = []
-	chunk = pd.read_csv('emails.csv', chunksize=nr_emails)
-	# for i in range(int(nr_emails / 500)):
-		# print('chunk', i)
+		messages = list(map(email.message_from_string, emails_df['message']))
+		emails_df.drop('message', axis=1, inplace=True)
+		# Get fields from parsed email objects
+		keys = messages[0].keys()
+		for key in keys:
+			emails_df[key] = [doc[key] for doc in messages]
+		# Parse content from emails
+		emails_df['content'] = list(map(get_text_from_email, messages))
+		for j in range(nr_emails):
+			fdata = emails_df.loc[j]
+			if ('-----Original Message-----' not in fdata['content']):
+				string = fdata['content']
+				while string.endswith('\n'):
+					string = string[:-1]
+				if not string:
+					continue
+				original_messages.append(
+					{
+						"message_content" : string,
+						"message_id" : fdata['Message-ID'],
+						"subject" : fdata['Subject'],
+						"conversation" : []
+					}
+					)
+		i = 0;
+		for k in range(nr_emails):
+			fdata = emails_df.loc[k]
+			if ("-----Original Message-----" in fdata['content']):
+				for message in original_messages:
+					if message['subject'] not in fdata['Subject']:
+						continue;
+					string = fdata['content']
+					while string.endswith('\n'):
+						string = string[:-1]
+					if string.endswith(message['message_content']):
+						i = i + 1
+						message['conversation'].append(fdata['content'])
+		print(len(original_messages))
+		j = 0;
+		for conv in original_messages:
+			if conv['conversation'] : 
+				j = j + 1
+				conv['conversation'] = list(dict.fromkeys(conv['conversation']))
 
-	emails_df = next(chunk)
-
-	messages = list(map(email.message_from_string, emails_df['message']))
-	emails_df.drop('message', axis=1, inplace=True)
-	# Get fields from parsed email objects
-	keys = messages[0].keys()
-	for key in keys:
-		emails_df[key] = [doc[key] for doc in messages]
-	# Parse content from emails
-	emails_df['content'] = list(map(get_text_from_email, messages))
-	for j in range(nr_emails):
-		fdata = emails_df.loc[j]
-		if ('-----Original Message-----' not in fdata['content']):
-			original_messages.append(
-				{
-					"message_content" : fdata['content'],
-					"message_id" : fdata['Message-ID'],
-					"conversation" : []
-				}
-				)
-
-	for k in range(nr_emails):
-		fdata = emails_df.loc[k]
-		if ("-----Original Message-----" in fdata['content']):
-			for message in original_messages:
-				if message['message_content'] in fdata['content']:
-					message['conversation'].append(fdata['content'])
-
-	for conv in original_messages:
-		if conv['conversation'] : 
-			print ('this is a conversation')
-			result = es.index(index='test3_conv', doc_type='conversation', id=conv['message_id'], body=conv)
-
-	print('I am printing a shite')
-	for mess in original_messages:
-		if conv['conversation'] :  
-			print('~~ ' + mess['message_content'] + ' **** ' + mess['conversation'] + ' ###')
-
-	print('I have printed all the shite')
-	# print ("khart ")
-	# print (len(original_messages))
+				result = es.index(index='conversations', doc_type='conversation', id=conv['message_id'], body=conv)
 
 import glob
 import joblib
 if __name__ == "__main__":
-	ready_to_insert(nr_emails=10000)
+	#ready_to_insert(nr_emails=10000)
 	create_conversaiton_index(nr_emails = 10000)
 	print("stated shite")
 	app.run(port=5000, debug=True)
