@@ -10,7 +10,7 @@ import requests
 import dateutil.parser
 from talon.signature.bruteforce import extract_signature
 
-populate_elastic = False
+populate_elastic = True
 es = Elasticsearch()
 app = Flask(__name__)
 
@@ -125,20 +125,23 @@ def unix_time_millis(dt):
 	return (dt - epoch).total_seconds() * 1000
 
 
-
-def find_my_signature(message):
-    # extract text before -----Original Message-----
-    if message.__contains__("-----Original Message-----"):
-        message = message.split("-----Original Message-----", 1)[1]
-    # extract signature
-    text, signature = extract_signature(message)
-    return signature
+def find_my_signature(my_message):
+	#print("--->find my signature<---")
+	#print("SIGNATURE: ", my_message)
+	# extract text before -----Original Message-----
+	my_message = ''.join(my_message)
+	if my_message.__contains__("-----Original Message-----"):
+		my_message = my_message.split("-----Original Message-----", 1)[1]
+	# extract signature
+	text, signature = extract_signature(my_message)
+	#print("SIGNATURE: ", signature)
+	return signature
 
 @app.route('/umple_baza', methods=['POST'])
 def ready_to_insert(nr_emails=500):
 	global populate_elastic
 	if populate_elastic:
-		
+		print("---> if populate elastic <---")
 		bodies = []
 		chunk = pd.read_csv('emails.csv', chunksize=500)
 		for i in range(int(nr_emails / 500)):
@@ -234,7 +237,9 @@ def create_conversaiton_index(nr_emails=500):
 import glob
 import joblib
 if __name__ == "__main__":
+	print("---> ready to insert <---")
 	ready_to_insert(nr_emails=10000)
+	print("---> create conversation index <---")
 	create_conversaiton_index(nr_emails = 10000)
 	print("stated shite")
 	app.run(port=5000, debug=True)
