@@ -8,12 +8,13 @@ import matplotlib.pyplot as plt
 import re, email, json
 import requests
 import dateutil.parser
+from talon.signature.bruteforce import extract_signature
 
 populate_elastic = True
 es = Elasticsearch()
 app = Flask(__name__)
 
-fields = ['Message_ID', 'From', 'To', 'Subject', 'Content_Type', 'content', 'user', 'insert_time']
+fields = ['Message_ID', 'From', 'To', 'Subject', 'Content_Type', 'content', 'user', 'insert_time', "signature"]
 		# 'X_From', 'X_To', 'X_Cc', 'X_Bcc', 'X_Folder', 'X_Origin', 'X_FileName', 'Mime_Version', 'Content_Transfer_Encoding']
 
 ## Helper functions
@@ -68,7 +69,8 @@ def build_body(data):
 		'content': mcontent,
 		'user': muser,
 		'insert_time': datetime.now(),
-		'spam': data['spam']
+		'spam': data['spam'],
+		'signature': data['signature']
 	}
 
 	return body
@@ -157,10 +159,24 @@ def unix_time_millis(dt):
 	epoch = datetime.utcfromtimestamp(0)
 	return (dt - epoch).total_seconds() * 1000
 
+
+
+def find_my_signature(my_message):
+	#print("--->find my signature<---")
+	#print("SIGNATURE: ", my_message)
+	# extract text before -----Original Message-----
+	my_message = ''.join(my_message)
+	if my_message.__contains__("-----Original Message-----"):
+		my_message = my_message.split("-----Original Message-----", 1)[1]
+	# extract signature
+	text, signature = extract_signature(my_message)
+	#print("SIGNATURE: ", signature)
+	return signature
+
 def ready_to_insert(nr_emails=500):
 	global populate_elastic
 	if populate_elastic:
-		
+		print("---> if populate elastic <---")
 		bodies = []
 		chunk = pd.read_csv('emails.csv', chunksize=500)
 		for i in range(int(nr_emails / 500)):
@@ -187,6 +203,7 @@ def ready_to_insert(nr_emails=500):
 			# Extract the root of 'file' as 'user'
 			emails_df['user'] = emails_df['file'].map(lambda x:x.split('/')[0])
 			emails_df['spam'] = hamspam[i * 500: (i + 1) * 500]
+			emails_df['signature'] = find_my_signature(emails_df['content'])
 
 			del messages
 
@@ -256,7 +273,9 @@ def create_conversaiton_index(nr_emails=500):
 import glob
 import joblib
 if __name__ == "__main__":
+	print("---> ready to insert <---")
 	ready_to_insert(nr_emails=10000)
+	print("---> create conversation index <---")
 	create_conversaiton_index(nr_emails = 10000)
 	print("stated shite")
 	app.run(port=5000, debug=True)
