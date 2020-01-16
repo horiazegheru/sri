@@ -1,0 +1,31 @@
+<html>
+    <body>
+        <h1>
+         Conversations Search:   
+         </h1>
+        <form action="{{ url_for('conversations') }}" method="post">
+            <br/>
+            <br/>
+            <input type="submit" value="Show all conversations"/>
+            <br/>
+            <br/>
+        </form>
+
+        <form action="{{ url_for('conversations_by_id') }}" method="post">
+            <input type="text" id="message_id_search" size="120" placeholder="Enter message id" name="message_id_search">
+            <br/>
+            <br/>
+            <input type="submit" value="Search by id"/>
+            <br/>
+        </form>
+
+        <form action="{{ url_for('conversations_by_message_content') }}" method="post">
+            <input type="text" id="search_message_content" size="120" placeholder="Enter conversation content" name="search_message_content">
+            <br/>
+            <br/>
+            <input type="submit" value="Search by conversation content"/>
+            <br/>
+        </form>
+
+    </body>
+</html>

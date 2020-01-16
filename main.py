@@ -120,9 +120,45 @@ def search():
 
 	return jsonify(res['hits']['hits'])
 
+@app.route('/conversations', methods=['GET'])
+def conversations():
+	global fields
+	return render_template('conversations.html',thing_to_say='hello', fields=fields)
+
+
+@app.route('/conversations', methods=['POST'])
+def search_conv():
+	res = es.search(index="conversations")
+	return jsonify(res['hits']['hits'])
+
+@app.route('/conversations_by_id', methods=['POST'])
+def conversations_by_id():
+	keyword = request.form['message_id_search']
+	res = es.get(index="conversations", doc_type='conversation', id=keyword)
+	return jsonify(res)
+
+@app.route('/conversations_by_message_content', methods=['POST'])
+def conversations_by_message_content():
+	keyword = request.form['search_message_content']
+	body = {
+		"query" : {
+			"multi_match" : {
+		        "fields": ["conversation"],
+		        "query" : keyword
+
+			}
+		}
+	}
+
+	res = es.search(index="conversations",  q=keyword)
+	return jsonify(res['hits']['hits'])
+
+
+
 def unix_time_millis(dt):
 	epoch = datetime.utcfromtimestamp(0)
 	return (dt - epoch).total_seconds() * 1000
+
 
 
 def find_my_signature(my_message):
@@ -137,7 +173,6 @@ def find_my_signature(my_message):
 	#print("SIGNATURE: ", signature)
 	return signature
 
-@app.route('/umple_baza', methods=['POST'])
 def ready_to_insert(nr_emails=500):
 	global populate_elastic
 	if populate_elastic:
@@ -184,55 +219,56 @@ def ready_to_insert(nr_emails=500):
 
 
 def create_conversaiton_index(nr_emails=500):
+	global populate_elastic
+	if populate_elastic:
+		original_messages = []
+		messages_list = []
+		bodies = []
+		chunk = pd.read_csv('emails.csv', chunksize=nr_emails)
+		emails_df = next(chunk)
 
-	original_messages = []
-	messages_list = []
-	bodies = []
-	chunk = pd.read_csv('emails.csv', chunksize=nr_emails)
-	# for i in range(int(nr_emails / 500)):
-		# print('chunk', i)
-
-	emails_df = next(chunk)
-
-	messages = list(map(email.message_from_string, emails_df['message']))
-	emails_df.drop('message', axis=1, inplace=True)
-	# Get fields from parsed email objects
-	keys = messages[0].keys()
-	for key in keys:
-		emails_df[key] = [doc[key] for doc in messages]
-	# Parse content from emails
-	emails_df['content'] = list(map(get_text_from_email, messages))
-	for j in range(nr_emails):
-		fdata = emails_df.loc[j]
-		if ('-----Original Message-----' not in fdata['content']):
-			original_messages.append(
-				{
-					"message_content" : fdata['content'],
-					"message_id" : fdata['Message-ID'],
-					"conversation" : []
-				}
+		messages = list(map(email.message_from_string, emails_df['message']))
+		emails_df.drop('message', axis=1, inplace=True)
+		# Get fields from parsed email objects
+		keys = messages[0].keys()
+		for key in keys:
+			emails_df[key] = [doc[key] for doc in messages]
+		# Parse content from emails
+		emails_df['content'] = list(map(get_text_from_email, messages))
+		for j in range(nr_emails):
+			fdata = emails_df.loc[j]
+			if ('-----Original Message-----' not in fdata['content']):
+				string = fdata['content']
+				while string.endswith('\n'):
+					string = string[:-1]
+				if not string:
+					continue
+				original_messages.append(
+					{
+						"message_content" : string,
+						"message_id" : fdata['Message-ID'],
+						"subject" : fdata['Subject'],
+						"conversation" : []
+					}
 				)
 
-	for k in range(nr_emails):
-		fdata = emails_df.loc[k]
-		if ("-----Original Message-----" in fdata['content']):
-			for message in original_messages:
-				if message['message_content'] in fdata['content']:
-					message['conversation'].append(fdata['content'])
+		for k in range(nr_emails):
+			fdata = emails_df.loc[k]
+			if "-----Original Message-----" in fdata['content']:
+				for message in original_messages:
+					if message['subject'] not in fdata['Subject']:
+						continue
+					string = fdata['content']
+					while string.endswith('\n'):
+						string = string[:-1]
+					if string.endswith(message['message_content']):
+						message['conversation'].append(fdata['content'])
 
-	for conv in original_messages:
-		if conv['conversation'] : 
-			print ('this is a conversation')
-			result = es.index(index='test3_conv', doc_type='conversation', id=conv['message_id'], body=conv)
+		for conv in original_messages:
+			if conv['conversation'] :
+				conv['conversation'] = list(dict.fromkeys(conv['conversation']))
 
-	print('I am printing a shite')
-	for mess in original_messages:
-		if conv['conversation'] :  
-			print('~~ ' + mess['message_content'] + ' **** ' + mess['conversation'] + ' ###')
-
-	print('I have printed all the shite')
-	# print ("khart ")
-	# print (len(original_messages))
+				result = es.index(index='conversations', doc_type='conversation', id=conv['message_id'], body=conv)
 
 import glob
 import joblib
