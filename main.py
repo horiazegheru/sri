@@ -8,12 +8,13 @@ import matplotlib.pyplot as plt
 import re, email, json
 import requests
 import dateutil.parser
+from talon.signature.bruteforce import extract_signature
 
 populate_elastic = False
 es = Elasticsearch()
 app = Flask(__name__)
 
-fields = ['Message_ID', 'From', 'To', 'Subject', 'Content_Type', 'content', 'user', 'insert_time']
+fields = ['Message_ID', 'From', 'To', 'Subject', 'Content_Type', 'content', 'user', 'insert_time', "signature"]
 		# 'X_From', 'X_To', 'X_Cc', 'X_Bcc', 'X_Folder', 'X_Origin', 'X_FileName', 'Mime_Version', 'Content_Transfer_Encoding']
 
 ## Helper functions
@@ -68,7 +69,8 @@ def build_body(data):
 		'content': mcontent,
 		'user': muser,
 		'insert_time': datetime.now(),
-		'spam': data['spam']
+		'spam': data['spam'],
+		'signature': data['signature']
 	}
 
 	return body
@@ -123,6 +125,15 @@ def unix_time_millis(dt):
 	return (dt - epoch).total_seconds() * 1000
 
 
+
+def find_my_signature(message):
+    # extract text before -----Original Message-----
+    if message.__contains__("-----Original Message-----"):
+        message = message.split("-----Original Message-----", 1)[1]
+    # extract signature
+    text, signature = extract_signature(message)
+    return signature
+
 @app.route('/umple_baza', methods=['POST'])
 def ready_to_insert(nr_emails=500):
 	global populate_elastic
@@ -154,6 +165,7 @@ def ready_to_insert(nr_emails=500):
 			# Extract the root of 'file' as 'user'
 			emails_df['user'] = emails_df['file'].map(lambda x:x.split('/')[0])
 			emails_df['spam'] = hamspam[i * 500: (i + 1) * 500]
+			emails_df['signature'] = find_my_signature(emails_df['content'])
 
 			del messages
 
