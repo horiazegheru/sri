@@ -118,12 +118,45 @@ def search():
 
 	return jsonify(res['hits']['hits'])
 
+@app.route('/conversations', methods=['GET'])
+def conversations():
+	global fields
+	return render_template('conversations.html',thing_to_say='hello', fields=fields)
+
+
+@app.route('/conversations', methods=['POST'])
+def search_conv():
+	res = es.search(index="conversations")
+	return jsonify(res['hits']['hits'])
+
+@app.route('/conversations_by_id', methods=['POST'])
+def conversations_by_id():
+	keyword = request.form['message_id_search']
+	res = es.get(index="conversations", doc_type='conversation', id=keyword)
+	return jsonify(res)
+
+@app.route('/conversations_by_message_content', methods=['POST'])
+def conversations_by_message_content():
+	keyword = request.form['search_message_content']
+	body = {
+		"query" : {
+			"multi_match" : {
+		        "fields": ["conversation"],
+		        "query" : keyword
+
+			}
+		}
+	}
+
+	res = es.search(index="conversations",  q=keyword)
+	return jsonify(res['hits']['hits'])
+
+
+
 def unix_time_millis(dt):
 	epoch = datetime.utcfromtimestamp(0)
 	return (dt - epoch).total_seconds() * 1000
 
-
-@app.route('/umple_baza', methods=['POST'])
 def ready_to_insert(nr_emails=500):
 	global populate_elastic
 	if populate_elastic:
@@ -162,11 +195,10 @@ def ready_to_insert(nr_emails=500):
 				bodies.append(build_body(mydata))
 
 		for body in bodies:
-			# if body['spam']:
-			# 	print('spam')
+			if body['spam']:
+				print('spam')
 			result = es.index(index='emails', doc_type='email', id=body['Message_ID'], body=body)
-		print("i am doneee ")
-	# return "ok"
+	return "ok"
 
 
 def create_conversaiton_index(nr_emails=500):
@@ -201,25 +233,22 @@ def create_conversaiton_index(nr_emails=500):
 						"subject" : fdata['Subject'],
 						"conversation" : []
 					}
-					)
-		i = 0;
+				)
+
 		for k in range(nr_emails):
 			fdata = emails_df.loc[k]
-			if ("-----Original Message-----" in fdata['content']):
+			if "-----Original Message-----" in fdata['content']:
 				for message in original_messages:
 					if message['subject'] not in fdata['Subject']:
-						continue;
+						continue
 					string = fdata['content']
 					while string.endswith('\n'):
 						string = string[:-1]
 					if string.endswith(message['message_content']):
-						i = i + 1
 						message['conversation'].append(fdata['content'])
-		print(len(original_messages))
-		j = 0;
+
 		for conv in original_messages:
-			if conv['conversation'] : 
-				j = j + 1
+			if conv['conversation'] :
 				conv['conversation'] = list(dict.fromkeys(conv['conversation']))
 
 				result = es.index(index='conversations', doc_type='conversation', id=conv['message_id'], body=conv)
@@ -227,7 +256,7 @@ def create_conversaiton_index(nr_emails=500):
 import glob
 import joblib
 if __name__ == "__main__":
-	#ready_to_insert(nr_emails=10000)
+	ready_to_insert(nr_emails=10000)
 	create_conversaiton_index(nr_emails = 10000)
 	print("stated shite")
 	app.run(port=5000, debug=True)
